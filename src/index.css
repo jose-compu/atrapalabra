@@ -1,0 +1,64 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Sora:wght@500;700;800&display=swap');
+
+:root {
+  --bg: #f3f8ff;
+  --card-bg: #ffffff;
+  --surface: #eef4ff;
+  --border: #c7d7f0;
+  --text: #1d2b46;
+  --muted: #587196;
+  --accent: #5e7ce2;
+  --accent-strong: #4666d5;
+  --accent-soft: #dfe8ff;
+  --danger: #c86a78;
+  --danger-strong: #a85461;
+  color-scheme: light;
+  font-family: 'Nunito', 'Segoe UI', Roboto, Arial, sans-serif;
+  font-size: 20px;
+  line-height: 1.42;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:root[data-theme='dark'] {
+  --bg: #101828;
+  --card-bg: #1c283c;
+  --surface: #26344b;
+  --border: #3a4a64;
+  --text: #ecf2ff;
+  --muted: #b2c2df;
+  --accent: #6f8df0;
+  --accent-strong: #5a79db;
+  --accent-soft: #2d3d5a;
+  --danger: #b8667c;
+  --danger-strong: #9c5468;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at top left, #ffffff 0%, #f3f8ff 45%),
+    linear-gradient(180deg, #ecf4ff 0%, #edf4ff 100%);
+  color: var(--text);
+}
+
+:root[data-theme='dark'] body {
+  background:
+    radial-gradient(circle at top left, #233044 0%, #101828 45%),
+    linear-gradient(180deg, #162235 0%, #101828 100%);
+}
+
+#root {
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
