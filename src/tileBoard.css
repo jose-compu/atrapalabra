@@ -10,7 +10,7 @@
   aspect-ratio: 1 / 1;
   min-height: 0;
   width: 100%;
-  font-size: clamp(2.6rem, 12cqw + 0.5rem, 4rem);
+  font-size: clamp(1.8rem, 9cqw + 0.4rem, 3.2rem);
   font-weight: 800;
   cursor: pointer;
   display: grid;
@@ -469,6 +469,6 @@
 
 @media (max-width: 760px) {
   .board button.cell {
-    font-size: clamp(2.3rem, 13cqw + 0.3rem, 3.5rem);
+    font-size: clamp(1.5rem, 10cqw + 0.2rem, 2.8rem);
   }
 }
