@@ -12,6 +12,7 @@ import {
   apiGetLeaderboard,
   apiGetProgress,
   apiLogin,
+  apiMigrateProgress,
   apiRegister,
   apiSaveProgress,
   clearAuth,
@@ -47,7 +48,7 @@ import {
   playWordSuccessSound,
 } from './game/sound'
 
-const GAME_URL = 'https://example.com/atrapalabra' // TODO: replace with real URL
+const GAME_URL = 'https://atrapalabra.vercel.app/'
 
 function totalScoreFromProfile(prof) {
   if (!prof || !prof.levels) return 0
@@ -109,7 +110,14 @@ function App() {
   const [authMode, setAuthMode] = useState('login') // 'login' | 'register'
   const [authError, setAuthError] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
-  const [authUser, setAuthUser] = useState(() => loadAuth()) // { userId, username } | null
+  const [authUser, setAuthUser] = useState(() => loadAuth())
+  const [legacyCookie, setLegacyCookie] = useState(() => {
+    if (loadAuth()) return null
+    const p = loadProfile()
+    return p && p.levels && Object.keys(p.levels).length > 0 ? p : null
+  })
+  const [migrateLoading, setMigrateLoading] = useState(false)
+  const [migrateMsg, setMigrateMsg] = useState('')
   const saveTimerRef = useRef(null)
   const [board, setBoard] = useState(() => createInitialBoard(getLevel(readInitialLevelNumber())))
   const [path, setPath] = useState([])
@@ -411,6 +419,34 @@ function App() {
     setSkinGrid((skins) => skinsAfterBoardUpdate(prev, board, skins))
   }, [board])
 
+  async function runMigration(userId) {
+    if (!legacyCookie) return
+    setMigrateLoading(true)
+    setMigrateMsg('')
+    try {
+      const result = await apiMigrateProgress(userId, legacyCookie)
+      const merged = {
+        username: profile?.username ?? legacyCookie.username,
+        unlockedLevel: result.unlockedLevel,
+        lastPlayedLevel: result.lastPlayedLevel,
+        highestCompletedLevel: result.highestCompleted,
+        bestScore: result.bestScore,
+        levels: result.levels,
+        updatedAt: Date.now(),
+      }
+      setProfile(merged)
+      const cap = Math.min(20, merged.unlockedLevel)
+      setLevelNumber(Math.min(cap, Math.max(1, merged.lastPlayedLevel)))
+      setLegacyCookie(null)
+      clearProfile()
+      setMigrateMsg('Progreso migrado con éxito.')
+    } catch (err) {
+      setMigrateMsg(err.message || 'Error al migrar')
+    } finally {
+      setMigrateLoading(false)
+    }
+  }
+
   async function startProfile(event) {
     event.preventDefault()
     const clean = usernameInput.trim()
@@ -425,8 +461,26 @@ function App() {
       if (authMode === 'register') {
         const data = await apiRegister(clean, passwordInput)
         setAuthUser({ userId: data.userId, username: data.username })
-        setLevelNumber(1)
-        setProfile(createProfile(data.username))
+        if (legacyCookie) {
+          const result = await apiMigrateProgress(data.userId, legacyCookie)
+          const merged = {
+            username: data.username,
+            unlockedLevel: result.unlockedLevel,
+            lastPlayedLevel: result.lastPlayedLevel,
+            highestCompletedLevel: result.highestCompleted,
+            bestScore: result.bestScore,
+            levels: result.levels,
+            updatedAt: Date.now(),
+          }
+          setProfile(merged)
+          const cap = Math.min(20, merged.unlockedLevel)
+          setLevelNumber(Math.min(cap, Math.max(1, merged.lastPlayedLevel)))
+          setLegacyCookie(null)
+          clearProfile()
+        } else {
+          setLevelNumber(1)
+          setProfile(createProfile(data.username))
+        }
       } else {
         const data = await apiLogin(clean, passwordInput)
         setAuthUser({ userId: data.userId, username: data.username })
@@ -710,6 +764,16 @@ function App() {
       {!profile ? (
         <form className="card login" onSubmit={startProfile}>
           <h2>{authMode === 'register' ? 'Crear cuenta' : 'Iniciar sesión'}</h2>
+          {legacyCookie && (
+            <div className="migrate-banner">
+              <p className="migrate-banner-text">
+                Se encontró progreso anterior de <strong>{legacyCookie.username}</strong> ({Object.keys(legacyCookie.levels).length} niveles jugados).
+                {authMode === 'register'
+                  ? ' Al registrarte se migrará automáticamente.'
+                  : ' Inicia sesión y luego podrás migrarlo a tu cuenta.'}
+              </p>
+            </div>
+          )}
           <label htmlFor="username">Nombre de jugador</label>
           <input
             id="username"
@@ -834,6 +898,21 @@ function App() {
               )}
             </div>
           </div>
+
+          {legacyCookie && authUser && (
+            <section className="card migrate-card">
+              <p className="migrate-banner-text">
+                Hay progreso anterior de <strong>{legacyCookie.username}</strong> ({Object.keys(legacyCookie.levels).length} niveles). ¿Migrar a tu cuenta?
+              </p>
+              {migrateMsg && <p className={`migrate-msg ${migrateMsg.includes('éxito') ? 'migrate-msg--ok' : 'migrate-msg--err'}`}>{migrateMsg}</p>}
+              <button type="button" className="migrate-btn" onClick={() => runMigration(authUser.userId)} disabled={migrateLoading}>
+                {migrateLoading ? 'Migrando...' : 'Migrar progreso'}
+              </button>
+              <button type="button" className="link-btn" onClick={() => { setLegacyCookie(null); clearProfile() }}>
+                Descartar datos antiguos
+              </button>
+            </section>
+          )}
 
           <section className="card scoreboard">
             <p>

@@ -60,6 +60,17 @@ export async function apiSaveProgress(userId, profile) {
   return data
 }
 
+export async function apiMigrateProgress(userId, cookieProfile) {
+  const res = await fetch('/api/progress/migrate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, cookieProfile }),
+  })
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error || 'Migration failed')
+  return data
+}
+
 export async function apiGetLeaderboard(level) {
   const url = level ? `/api/leaderboard?level=${level}` : '/api/leaderboard'
   const res = await fetch(url)
