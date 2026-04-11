@@ -9,6 +9,7 @@ import {
   updateProfileStats,
 } from './game/cookies'
 import {
+  apiGetLeaderboard,
   apiGetProgress,
   apiLogin,
   apiRegister,
@@ -38,6 +39,7 @@ import {
 import {
   playCascadeSound,
   playErrorSound,
+  playRankUpSound,
   playScoreTickSound,
   playSelectSound,
   playWinSound,
@@ -264,6 +266,73 @@ function App() {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     }
   }, [profile, authUser])
+
+  const [overallRanking, setOverallRanking] = useState([])
+  const [levelRanking, setLevelRanking] = useState([])
+  const [rankingLevel, setRankingLevel] = useState(null)
+  const [rankUpPopup, setRankUpPopup] = useState(null)
+  const prevOverallPosRef = useRef(null)
+  const prevLevelPosRef = useRef(null)
+
+  function checkRankUp(oldPos, newPos, label) {
+    if (oldPos === null || newPos >= oldPos || newPos < 1) return
+    setRankUpPopup({ from: oldPos, to: newPos, label })
+    playRankUpSound()
+  }
+
+  const refreshLeaderboard = useCallback(() => {
+    apiGetLeaderboard().then((d) => {
+      const ranking = d.ranking ?? []
+      const oldPos = prevOverallPosRef.current
+      const newPos = profile ? ranking.findIndex((r) => r.username === profile.username) + 1 : -1
+      if (newPos > 0) {
+        if (oldPos !== null) checkRankUp(oldPos, newPos, 'ranking global')
+        prevOverallPosRef.current = newPos
+      }
+      setOverallRanking(ranking)
+    }).catch(() => {})
+  }, [profile])
+
+  useEffect(() => {
+    if (!profile) return
+    refreshLeaderboard()
+  }, [profile, refreshLeaderboard])
+
+  useEffect(() => {
+    if (!profile) return
+    setRankingLevel(levelNumber)
+    prevLevelPosRef.current = null
+    apiGetLeaderboard(levelNumber).then((d) => {
+      const ranking = d.ranking ?? []
+      const pos = ranking.findIndex((r) => r.username === profile.username) + 1
+      if (pos > 0) prevLevelPosRef.current = pos
+      setLevelRanking(ranking)
+    }).catch(() => {})
+  }, [levelNumber, profile])
+
+  useEffect(() => {
+    if (!profile || !completed) return
+    const lvl = levelNumber
+    const timer = setTimeout(() => {
+      apiGetLeaderboard(lvl).then((d) => {
+        const ranking = d.ranking ?? []
+        const newPos = ranking.findIndex((r) => r.username === profile.username) + 1
+        if (newPos > 0) {
+          checkRankUp(prevLevelPosRef.current, newPos, `nivel ${lvl}`)
+          prevLevelPosRef.current = newPos
+        }
+        setLevelRanking(ranking)
+      }).catch(() => {})
+      refreshLeaderboard()
+    }, 2000)
+    return () => clearTimeout(timer)
+  }, [completed, levelNumber, profile, refreshLeaderboard])
+
+  useEffect(() => {
+    if (!rankUpPopup) return
+    const t = setTimeout(() => setRankUpPopup(null), 4000)
+    return () => clearTimeout(t)
+  }, [rankUpPopup])
 
   const maxPlayableLevel = profile ? Math.min(20, profile.unlockedLevel) : 1
 
@@ -611,6 +680,18 @@ function App() {
 
   return (
     <main className={`app ${profile ? 'app--playing' : ''}`}>
+      {rankUpPopup && (
+        <div className="rankup-overlay" key={`${rankUpPopup.label}-${rankUpPopup.to}`}>
+          <div className="rankup-popup">
+            <span className="rankup-star">&#9733;</span>
+            <span className="rankup-title">Subiste en el ranking</span>
+            <span className="rankup-detail">
+              {rankUpPopup.label}: #{rankUpPopup.from} &rarr; <strong>#{rankUpPopup.to}</strong>
+            </span>
+            {rankUpPopup.to === 1 && <span className="rankup-first">&#127942; Primer lugar</span>}
+          </div>
+        </div>
+      )}
       <div className="top-bar">
         {profile && (
           <button className="top-bar-btn danger" type="button" onClick={confirmResetUser}>
@@ -984,6 +1065,42 @@ function App() {
               })}
             </div>
           </section>
+
+          {levelRanking.length > 0 && (
+            <section className="card leaderboard">
+              <h2>Top 10 — Nivel {rankingLevel}</h2>
+              <ol className="ranking-list">
+                {levelRanking.map((entry, i) => (
+                  <li key={entry.username} className={`ranking-item ${i === 0 ? 'ranking-item--gold' : i === 1 ? 'ranking-item--silver' : i === 2 ? 'ranking-item--bronze' : ''} ${entry.username === profile?.username ? 'ranking-item--you' : ''}`}>
+                    <span className="ranking-pos">{i + 1}</span>
+                    <span className="ranking-name">{entry.username}</span>
+                    <span className="ranking-score">{entry.bestScore} pts</span>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
+
+          {overallRanking.length > 0 && (
+            <section className="card leaderboard leaderboard--overall">
+              <div className="champion-banner">
+                <span className="champion-crown">&#9733;</span>
+                <span className="champion-name">{overallRanking[0].username}</span>
+                <span className="champion-score">{overallRanking[0].totalScore} pts</span>
+                <span className="champion-title">Mejor jugador global</span>
+              </div>
+              <h2>Top 10 — Puntuación global</h2>
+              <ol className="ranking-list">
+                {overallRanking.map((entry, i) => (
+                  <li key={entry.username} className={`ranking-item ${i === 0 ? 'ranking-item--gold' : i === 1 ? 'ranking-item--silver' : i === 2 ? 'ranking-item--bronze' : ''} ${entry.username === profile?.username ? 'ranking-item--you' : ''}`}>
+                    <span className="ranking-pos">{i + 1}</span>
+                    <span className="ranking-name">{entry.username}</span>
+                    <span className="ranking-score">{entry.totalScore} pts</span>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
         </>
       )}
     </main>

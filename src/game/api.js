@@ -60,6 +60,14 @@ export async function apiSaveProgress(userId, profile) {
   return data
 }
 
+export async function apiGetLeaderboard(level) {
+  const url = level ? `/api/leaderboard?level=${level}` : '/api/leaderboard'
+  const res = await fetch(url)
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error || 'Failed to load leaderboard')
+  return data
+}
+
 function saveAuth(userId, username) {
   try {
     localStorage.setItem(AUTH_KEY, JSON.stringify({ userId, username }))

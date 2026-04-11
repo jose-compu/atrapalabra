@@ -139,3 +139,22 @@ export function playWinSound() {
   }
   playTone({ frequency: 587.33, duration: 0.22, type: 'triangle', volume: vol * 0.5, delay: 0.92 })
 }
+
+export function playRankUpSound() {
+  const vol = 0.032
+  const fanfare = [
+    { f: 523.25, d: 0.08, delay: 0.0 },
+    { f: 659.25, d: 0.08, delay: 0.09 },
+    { f: 783.99, d: 0.08, delay: 0.18 },
+    { f: 1046.5, d: 0.14, delay: 0.28 },
+    { f: 783.99, d: 0.06, delay: 0.44 },
+    { f: 1046.5, d: 0.10, delay: 0.52 },
+    { f: 1318.5, d: 0.20, delay: 0.64 },
+  ]
+  for (const { f, d, delay } of fanfare) {
+    playTone({ frequency: f, duration: d, type: 'square', volume: vol, delay })
+    playTone({ frequency: f, duration: d * 1.1, type: 'triangle', volume: vol * 0.45, delay: delay + 0.01 })
+  }
+  playTone({ frequency: 1046.5, duration: 0.28, type: 'sine', volume: vol * 0.35, delay: 0.64 })
+  playTone({ frequency: 659.25, duration: 0.28, type: 'sine', volume: vol * 0.25, delay: 0.64 })
+}
