@@ -9,6 +9,14 @@ import {
   updateProfileStats,
 } from './game/cookies'
 import {
+  apiGetProgress,
+  apiLogin,
+  apiRegister,
+  apiSaveProgress,
+  clearAuth,
+  loadAuth,
+} from './game/api'
+import {
   buildWord,
   computeWordScore,
   createInitialBoard,
@@ -95,11 +103,17 @@ function App() {
 
   const [profile, setProfile] = useState(() => loadProfile())
   const [usernameInput, setUsernameInput] = useState('')
+  const [passwordInput, setPasswordInput] = useState('')
+  const [authMode, setAuthMode] = useState('login') // 'login' | 'register'
+  const [authError, setAuthError] = useState('')
+  const [authLoading, setAuthLoading] = useState(false)
+  const [authUser, setAuthUser] = useState(() => loadAuth()) // { userId, username } | null
+  const saveTimerRef = useRef(null)
   const [board, setBoard] = useState(() => createInitialBoard(getLevel(readInitialLevelNumber())))
   const [path, setPath] = useState([])
   const [score, setScore] = useState(0)
   const [message, setMessage] = useState(
-    'Toca letras vecinas para formar palabras. Palabras largas dan muchos mas puntos.',
+    'Toca letras vecinas para formar palabras. Palabras largas dan muchos más puntos.',
   )
   const [usedWords, setUsedWords] = useState(new Set())
   const [wordLog, setWordLog] = useState([])
@@ -146,11 +160,11 @@ function App() {
     setMessage('Texto copiado. Pega (Ctrl+V) en Facebook.')
   }
   function shareTotalWhatsApp() {
-    const text = `${userName} en Atrapalabra — Puntuacion total: ${totalScore} puntos en ${completedCount} niveles!\n${GAME_URL}`
+    const text = `${userName} en Atrapalabra — Puntuación total: ${totalScore} puntos en ${completedCount} niveles!\n${GAME_URL}`
     shareOnWhatsApp(text)
   }
   function shareTotalFacebook() {
-    const text = `${userName} en Atrapalabra — Puntuacion total: ${totalScore} puntos en ${completedCount} niveles!`
+    const text = `${userName} en Atrapalabra — Puntuación total: ${totalScore} puntos en ${completedCount} niveles!`
     shareOnFacebook(text)
     setMessage('Texto copiado. Pega (Ctrl+V) en Facebook.')
   }
@@ -219,6 +233,38 @@ function App() {
     }
   }, [profile])
 
+  useEffect(() => {
+    if (!authUser) return
+    apiGetProgress(authUser.userId)
+      .then((remote) => {
+        const merged = {
+          username: authUser.username,
+          unlockedLevel: remote.unlockedLevel ?? 1,
+          lastPlayedLevel: remote.lastPlayedLevel ?? 1,
+          highestCompletedLevel: remote.highestCompleted ?? 0,
+          bestScore: remote.bestScore ?? 0,
+          levels: remote.levels ?? {},
+          updatedAt: Date.now(),
+        }
+        setProfile(merged)
+        const cap = Math.min(20, merged.unlockedLevel)
+        const saved = typeof merged.lastPlayedLevel === 'number' ? merged.lastPlayedLevel : 1
+        setLevelNumber(Math.min(cap, Math.max(1, saved)))
+      })
+      .catch(() => {})
+  }, [authUser])
+
+  useEffect(() => {
+    if (!authUser || !profile) return
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(() => {
+      apiSaveProgress(authUser.userId, profile).catch(() => {})
+    }, 1200)
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    }
+  }, [profile, authUser])
+
   const maxPlayableLevel = profile ? Math.min(20, profile.unlockedLevel) : 1
 
   useEffect(() => {
@@ -247,7 +293,7 @@ function App() {
     setTargetReached(false)
     setExhausted(false)
     setFallAnim(null)
-    setMessage('Toca letras vecinas para formar palabras. Palabras largas dan muchos mas puntos.')
+    setMessage('Toca letras vecinas para formar palabras. Palabras largas dan muchos más puntos.')
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [levelNumber, hasProfile])
 
@@ -296,12 +342,32 @@ function App() {
     setSkinGrid((skins) => skinsAfterBoardUpdate(prev, board, skins))
   }, [board])
 
-  function startProfile(event) {
+  async function startProfile(event) {
     event.preventDefault()
     const clean = usernameInput.trim()
     if (!clean) return
-    setLevelNumber(1)
-    setProfile(createProfile(clean))
+    if (!passwordInput) {
+      setAuthError('Introduce una contraseña.')
+      return
+    }
+    setAuthError('')
+    setAuthLoading(true)
+    try {
+      if (authMode === 'register') {
+        const data = await apiRegister(clean, passwordInput)
+        setAuthUser({ userId: data.userId, username: data.username })
+        setLevelNumber(1)
+        setProfile(createProfile(data.username))
+      } else {
+        const data = await apiLogin(clean, passwordInput)
+        setAuthUser({ userId: data.userId, username: data.username })
+      }
+      setPasswordInput('')
+    } catch (err) {
+      setAuthError(err.message || 'Error de autenticación')
+    } finally {
+      setAuthLoading(false)
+    }
   }
 
   function resetLevel() {
@@ -319,13 +385,17 @@ function App() {
     setCompleted(false)
     setTargetReached(false)
     setExhausted(false)
-    setMessage('Toca letras vecinas para formar palabras. Palabras largas dan muchos mas puntos.')
+    setMessage('Toca letras vecinas para formar palabras. Palabras largas dan muchos más puntos.')
   }
 
   function resetUser() {
     clearProfile()
+    clearAuth()
+    setAuthUser(null)
     setProfile(null)
     setUsernameInput('')
+    setPasswordInput('')
+    setAuthError('')
     setLevelNumber(1)
     const L = getLevel(1)
     const nextBoard = createInitialBoard(L)
@@ -342,12 +412,12 @@ function App() {
     setCompleted(false)
     setTargetReached(false)
     setExhausted(false)
-    setMessage('Usuario reiniciado. Introduce un nuevo nombre para empezar.')
+    setMessage('Sesión cerrada. Inicia sesión para continuar.')
   }
 
   function confirmResetUser() {
     const ok = window.confirm(
-      '¿Reiniciar usuario? Se borrará el perfil y el progreso guardados en este navegador.',
+      '¿Cerrar sesión? Se borrarán los datos locales. Tu progreso queda guardado en tu cuenta.',
     )
     if (!ok) return
     resetUser()
@@ -394,14 +464,14 @@ function App() {
     }
 
     if (!isAdjacent(last, { row, col })) {
-      setMessage('Toca una letra que toque a la ultima seleccionada (arriba, abajo, diagonal o lado).')
+      setMessage('Toca una letra que toque a la última seleccionada (arriba, abajo, diagonal o lado).')
       playErrorSound()
       return
     }
 
     const already = path.some((step) => step.row === row && step.col === col)
     if (already) {
-      setMessage('No puedes repetir la misma casilla. Retrocede tocando la penultima letra.')
+      setMessage('No puedes repetir la misma casilla. Retrocede tocando la penúltima letra.')
       playErrorSound()
       return
     }
@@ -428,7 +498,7 @@ function App() {
         : `Nivel 20 completado con ${score} puntos.`,
     )
     playWinSound()
-    setProfile((prev) => updateProfileStats(prev, level.level, score, true))
+    setProfile((prev) => updateProfileStats(prev, level.level, score, true, [...usedWords]))
   }
 
   const submitWord = useCallback(() => {
@@ -443,7 +513,7 @@ function App() {
       return
     }
     if (!dictionarySet.has(word)) {
-      setMessage(`"${word}" no esta en el diccionario.`)
+      setMessage(`"${word}" no está en el diccionario.`)
       setPath([])
       playWordFailSound()
       return
@@ -506,7 +576,7 @@ function App() {
     if (reachedTarget && !targetReached) {
       setTargetReached(true)
       setMessage(
-        (prev) => `${prev} — Objetivo alcanzado. Puedes enviar el nivel o seguir jugando para mas puntos.`,
+        (prev) => `${prev} — Objetivo alcanzado. Puedes enviar el nivel o seguir jugando para más puntos.`,
       )
     }
 
@@ -515,12 +585,14 @@ function App() {
       setExhausted(true)
       if (reachedTarget || targetReached) {
         setCompleted(true)
-        setMessage(`No quedan palabras. Nivel enviado automaticamente con ${nextScore} puntos.`)
+        setMessage(`No quedan palabras. Nivel enviado automáticamente con ${nextScore} puntos.`)
         playWinSound()
-        setProfile((prev) => updateProfileStats(prev, level.level, nextScore, true))
+        const allWords = [...new Set([...usedWords, word])]
+        setProfile((prev) => updateProfileStats(prev, level.level, nextScore, true, allWords))
       } else {
-        setMessage(`No quedan palabras formables. Puntuacion: ${nextScore}. Reinicia para intentar de nuevo.`)
-        setProfile((prev) => updateProfileStats(prev, level.level, nextScore, false))
+        setMessage(`No quedan palabras formables. Puntuación: ${nextScore}. Reinicia para intentar de nuevo.`)
+        const allWords = [...new Set([...usedWords, word])]
+        setProfile((prev) => updateProfileStats(prev, level.level, nextScore, false, allWords))
       }
     }
   }, [
@@ -539,17 +611,24 @@ function App() {
 
   return (
     <main className={`app ${profile ? 'app--playing' : ''}`}>
+      <div className="top-bar">
+        {profile && (
+          <button className="top-bar-btn danger" type="button" onClick={confirmResetUser}>
+            Cerrar sesión
+          </button>
+        )}
+        <button className="top-bar-btn" onClick={() => setIsDarkMode((prev) => !prev)}>
+          {isDarkMode ? 'Claro' : 'Oscuro'}
+        </button>
+      </div>
       <header className="hero">
         <h1>{gameName}</h1>
-        <p className="subtitle">Juego de palabras por niveles en espanol</p>
-        <button className="theme-toggle" onClick={() => setIsDarkMode((prev) => !prev)}>
-          Modo oscuro: {isDarkMode ? 'Activado' : 'Desactivado'}
-        </button>
+        <p className="subtitle">Juego de palabras por niveles en español</p>
       </header>
 
       {!profile ? (
         <form className="card login" onSubmit={startProfile}>
-          <h2>Comenzar partida</h2>
+          <h2>{authMode === 'register' ? 'Crear cuenta' : 'Iniciar sesión'}</h2>
           <label htmlFor="username">Nombre de jugador</label>
           <input
             id="username"
@@ -557,8 +636,29 @@ function App() {
             onChange={(event) => setUsernameInput(event.target.value)}
             placeholder="Escribe tu nombre"
             maxLength={28}
+            disabled={authLoading}
           />
-          <button type="submit">Guardar y empezar</button>
+          <label htmlFor="password">Contraseña</label>
+          <input
+            id="password"
+            type="password"
+            value={passwordInput}
+            onChange={(event) => setPasswordInput(event.target.value)}
+            placeholder="Escribe tu contraseña"
+            maxLength={64}
+            disabled={authLoading}
+          />
+          {authError && <p className="auth-error">{authError}</p>}
+          <button type="submit" disabled={authLoading}>
+            {authLoading ? 'Cargando...' : authMode === 'register' ? 'Registrarse' : 'Entrar'}
+          </button>
+          <p className="auth-toggle">
+            {authMode === 'login' ? (
+              <>No tienes cuenta? <button type="button" className="link-btn" onClick={() => { setAuthMode('register'); setAuthError('') }}>Registrarse</button></>
+            ) : (
+              <>Ya tienes cuenta? <button type="button" className="link-btn" onClick={() => { setAuthMode('login'); setAuthError('') }}>Iniciar sesión</button></>
+            )}
+          </p>
         </form>
       ) : (
         <>
@@ -658,7 +758,7 @@ function App() {
             <p>
               Jugador: <strong>{profile.username}</strong>
               <br />
-              Puntuacion total: <strong>{totalScore}</strong> pts ({completedCount} niveles)
+              Puntuación total: <strong>{totalScore}</strong> pts ({completedCount} niveles)
               {completedCount > 0 && (
                 <>
                   {' '}
@@ -750,9 +850,6 @@ function App() {
                   Siguiente nivel
                 </button>
               ) : null}
-              <button className="secondary danger" type="button" onClick={confirmResetUser}>
-                Reiniciar usuario
-              </button>
             </div>
           </section>
 
@@ -762,10 +859,10 @@ function App() {
             </h2>
             <p className="small">{level.subtitle}</p>
             <p className="small instruction-strong">
-              Busca palabras largas: dan muchos mas puntos que las cortas.
+              Busca palabras largas: dan muchos más puntos que las cortas.
               Las casillas con borde de color son pistas de palabras en linea recta.
               <br />
-              Juega hasta agotar el tablero. Alcanza el objetivo para poder enviar el nivel, pero sigue jugando para maximizar tu puntuacion.
+              Juega hasta agotar el tablero. Alcanza el objetivo para poder enviar el nivel, pero sigue jugando para maximizar tu puntuación.
             </p>
             <div
               ref={boardRef}
@@ -861,7 +958,7 @@ function App() {
                 </button>
               )}
               <button className="secondary" onClick={clearSelection} disabled={path.length === 0}>
-                Limpiar seleccion
+                Limpiar selección
               </button>
               <button className="secondary danger" onClick={resetLevel}>
                 Reiniciar nivel

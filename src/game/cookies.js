@@ -45,7 +45,7 @@ export function createProfile(username) {
   }
 }
 
-export function updateProfileStats(profile, levelNumber, score, completed) {
+export function updateProfileStats(profile, levelNumber, score, completed, foundWords) {
   if (!profile) {
     return profile
   }
@@ -55,11 +55,17 @@ export function updateProfileStats(profile, levelNumber, score, completed) {
     bestScore: 0,
     completed: false,
     attempts: 0,
+    foundWords: [],
   }
 
   currentLevelStats.bestScore = Math.max(currentLevelStats.bestScore, score)
   currentLevelStats.completed = currentLevelStats.completed || completed
   currentLevelStats.attempts += 1
+  if (foundWords && foundWords.length > 0) {
+    const prev = new Set(currentLevelStats.foundWords ?? [])
+    for (const w of foundWords) prev.add(w)
+    currentLevelStats.foundWords = [...prev]
+  }
   next.levels[key] = currentLevelStats
 
   next.bestScore = Math.max(next.bestScore, score)
